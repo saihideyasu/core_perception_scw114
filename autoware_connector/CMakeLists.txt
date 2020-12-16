@@ -59,6 +59,10 @@ add_dependencies(can_odometry_scw
   ${catkin_EXPORTED_TARGETS}
 )
 
+add_executable(localizer_switch nodes/localizer_switch/localizer_switch.cpp)
+target_link_libraries(localizer_switch ${catkin_LIBRARIES})
+add_dependencies(localizer_switch ${catkin_EXPORTED_TARGETS})
+
 install(TARGETS can_status_translator
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
@@ -72,6 +76,12 @@ install(TARGETS can_odometry
 )
 
 install(TARGETS can_odometry_scw
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+install(TARGETS localizer_switch
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
