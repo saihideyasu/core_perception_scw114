@@ -3,6 +3,7 @@ project(autoware_connector)
 
 find_package(catkin REQUIRED COMPONENTS
   autoware_build_flags
+  autoware_config_msgs
   autoware_can_msgs
   autoware_msgs
   geometry_msgs
@@ -45,6 +46,19 @@ add_dependencies(can_odometry
   ${catkin_EXPORTED_TARGETS}
 )
 
+add_executable(can_odometry_scw
+  nodes/can_odometry/can_odometry_node.cpp
+  nodes/can_odometry/can_odometry_core_scw.cpp
+)
+
+target_link_libraries(can_odometry_scw
+  ${catkin_LIBRARIES}
+)
+
+add_dependencies(can_odometry_scw
+  ${catkin_EXPORTED_TARGETS}
+)
+
 install(TARGETS can_status_translator
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
@@ -52,6 +66,12 @@ install(TARGETS can_status_translator
 )
 
 install(TARGETS can_odometry
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+install(TARGETS can_odometry_scw
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
