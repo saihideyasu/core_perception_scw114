@@ -1,0 +1,13 @@
+<!-- -->
+<launch>
+  <arg name="namespace1" default="/nmea2tfpose_RTK1"/>
+  <arg name="namespace2" default="/nmea2tfpose_RTK2"/>
+
+  <node pkg="gnss_localizer" type="gnss_selector" name="gnss_selector" output="log" >
+    <param name="namespace1" value="$(arg namespace1)"/>
+    <param name="namespace2" value="$(arg namespace2)"/>
+  </node>
+
+  <node pkg="gnss_localizer" type="RTK_localizer" name="RTK_localizer" output="log" >
+  </node>
+</launch>

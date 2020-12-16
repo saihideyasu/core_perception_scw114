@@ -9,6 +9,8 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
   tf
+  autoware_msgs
+  autoware_system_msgs
 )
 
 catkin_package()
@@ -34,7 +36,15 @@ target_include_directories(nmea2tfpose PRIVATE nodes/nmea2tfpose ${catkin_INCLUD
 target_link_libraries(nmea2tfpose ${catkin_LIBRARIES})
 add_dependencies(nmea2tfpose ${catkin_EXPORTED_TARGETS})
 
-install(TARGETS nmea2tfpose fix2tfpose
+add_executable(nmea2tfpose_RTK
+        nodes/nmea2tfpose/nmea2tfpose_core_RTK.cpp
+        nodes/nmea2tfpose/nmea2tfpose_node.cpp
+        )
+target_include_directories(nmea2tfpose_RTK PRIVATE nodes/nmea2tfpose ${catkin_INCLUDE_DIRS})
+target_link_libraries(nmea2tfpose_RTK ${catkin_LIBRARIES})
+add_dependencies(nmea2tfpose_RTK ${catkin_EXPORTED_TARGETS})
+
+install(TARGETS nmea2tfpose fix2tfpose nmea2tfpose_RTK
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
