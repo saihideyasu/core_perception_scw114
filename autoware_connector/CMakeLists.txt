@@ -20,6 +20,8 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
+include_directories("/usr/include/eigen3")
+
 add_executable(can_status_translator
   nodes/can_status_translator/can_status_translator_node.cpp
   nodes/can_status_translator/can_status_translator_core.cpp
@@ -63,6 +65,10 @@ add_executable(localizer_switch nodes/localizer_switch/localizer_switch.cpp)
 target_link_libraries(localizer_switch ${catkin_LIBRARIES})
 add_dependencies(localizer_switch ${catkin_EXPORTED_TARGETS})
 
+add_executable(estimate_to_baselink nodes/estimate_to_baselink/estimate_to_baselink.cpp)
+target_link_libraries(estimate_to_baselink ${catkin_LIBRARIES})
+add_dependencies(estimate_to_baselink ${catkin_EXPORTED_TARGETS})
+
 install(TARGETS can_status_translator
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
@@ -82,6 +88,12 @@ install(TARGETS can_odometry_scw
 )
 
 install(TARGETS localizer_switch
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+install(TARGETS estimate_to_baselink
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
