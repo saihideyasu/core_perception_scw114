@@ -79,6 +79,10 @@ add_executable(ndt_matching nodes/ndt_matching/ndt_matching.cpp)
 target_link_libraries(ndt_matching ${catkin_LIBRARIES})
 add_dependencies(ndt_matching ${catkin_EXPORTED_TARGETS})
 
+add_executable(ndt_imu_stack nodes/ndt_imu_stack/ndt_imu_stack.cpp)
+target_link_libraries(ndt_imu_stack ${catkin_LIBRARIES})
+add_dependencies(ndt_imu_stack ${catkin_EXPORTED_TARGETS})
+
 add_executable(ndt_mapping nodes/ndt_mapping/ndt_mapping.cpp)
 target_link_libraries(ndt_mapping ${catkin_LIBRARIES})
 add_dependencies(ndt_mapping ${catkin_EXPORTED_TARGETS})
@@ -145,6 +149,7 @@ install(
     ndt_matching_monitor
     ndt_matching_monitor_lib
     queue_counter
+    ndt_imu_stack
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

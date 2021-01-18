@@ -68,7 +68,6 @@
 #include <autoware_config_msgs/ConfigNDT.h>
 
 #include <autoware_msgs/NDTStat.h>
-#include <autoware_msgs/ImuValues.h>
 
 //headers in Autoware Health Checker
 #include <autoware_health_checker/health_checker/health_checker.h>
@@ -923,40 +922,58 @@ static void imu_callback(const sensor_msgs::Imu::Ptr& input)
   previous_imu_yaw = imu_yaw;
 }
 
-static void imu_values_callback(const autoware_msgs::ImuValues::ConstPtr& input)
-{ 
-  const ros::Time current_time = input->header.stamp;
-  static ros::Time previous_time = current_time;
-  const double diff_time = (current_time - previous_time).toSec();
+static geometry_msgs::Pose imu_stack_pose;
+static void imu_calc_stack()
+{
+  /*predict_pose_imu.x = previous_pose.x + offset_imu_x;
+  predict_pose_imu.y = previous_pose.y + offset_imu_y;
+  predict_pose_imu.z = previous_pose.z + offset_imu_z;
+  predict_pose_imu.roll = previous_pose.roll + offset_imu_roll;
+  predict_pose_imu.pitch = previous_pose.pitch + offset_imu_pitch;
+  predict_pose_imu.yaw = previous_pose.yaw + offset_imu_yaw;*/
 
-  double imu_roll, imu_pitch, imu_yaw;
-  tf::Quaternion imu_orientation = tf::createQuaternionFromRPY(input->roll_deg/180/M_PI, input->pitch_deg/180/M_PI, input->yaw_deg/180/M_PI);
-  tf::Matrix3x3(imu_orientation).getRPY(imu_roll, imu_pitch, imu_yaw);
+  /*Eigen::Translation3f xyz(imu_stack_pose.position.x, imu_stack_pose.position.y, imu_stack_pose.position.z);//translation
+  double roll, pitch, yaw;
+  tf::Quaternion qua;
+  tf::quaternionMsgToTF(imu_stack_pose.orientation, qua);
+  tf::Matrix3x3(qua).getRPY(roll, pitch, yaw);
+  Eigen::AngleAxisf rot_x(roll, Eigen::Vector3f::UnitX());  //rotation
+  Eigen::AngleAxisf rot_y(pitch, Eigen::Vector3f::UnitY());
+  Eigen::AngleAxisf rot_z(yaw, Eigen::Vector3f::UnitZ());
+  Eigen::Matrix4f btoi = (xyz * rot_z * rot_y * rot_x).matrix();
+
+  Eigen::Translation3f init_translation(previous_pose.x, previous_pose.y, previous_pose.z);
+  Eigen::AngleAxisf init_rotation_x(previous_pose.roll, Eigen::Vector3f::UnitX());
+  Eigen::AngleAxisf init_rotation_y(previous_pose.pitch, Eigen::Vector3f::UnitY());
+  Eigen::AngleAxisf init_rotation_z(previous_pose.yaw, Eigen::Vector3f::UnitZ());
+  Eigen::Matrix4f p = (init_translation * init_rotation_z * init_rotation_y * init_rotation_x) * btoi;
+
+  tf::Matrix3x3 mat_b;
+  mat_b.setValue(static_cast<double>(p(0, 0)), static_cast<double>(p(0, 1)), static_cast<double>(p(0, 2)),
+                  static_cast<double>(p(1, 0)), static_cast<double>(p(1, 1)), static_cast<double>(p(1, 2)),
+                  static_cast<double>(p(2, 0)), static_cast<double>(p(2, 1)), static_cast<double>(p(2, 2)));
+
+  // Update imu_pose
+  predict_pose_imu.x = p(0, 3);
+  predict_pose_imu.y = p(1, 3);
+  predict_pose_imu.z = p(2, 3);
+  mat_b.getRPY(predict_pose_imu.roll, predict_pose_imu.pitch, predict_pose_imu.yaw, 1);*/
   
-  static double previous_imu_roll = imu_roll, previous_imu_pitch = imu_pitch, previous_imu_yaw = imu_yaw;
-  const double diff_imu_roll = calcDiffForRadian(imu_roll, previous_imu_roll);
-  const double diff_imu_pitch = calcDiffForRadian(imu_pitch, previous_imu_pitch);
-  const double diff_imu_yaw = calcDiffForRadian(imu_yaw, previous_imu_yaw);
+  /*predict_pose_imu.x = previous_pose.x + imu_stack_pose.position.x;
+  predict_pose_imu.y = previous_pose.y + imu_stack_pose.position.y;
+  predict_pose_imu.z = previous_pose.z + imu_stack_pose.position.z;*/
 
-  if (diff_time != 0)
-  {
-    imu.angular_velocity.x = diff_imu_roll / diff_time;
-    imu.angular_velocity.y = diff_imu_pitch / diff_time;
-    imu.angular_velocity.z = diff_imu_yaw / diff_time;
-  }
-  else
-  {
-    imu.angular_velocity.x = 0;
-    imu.angular_velocity.y = 0;
-    imu.angular_velocity.z = 0;
-  }
+  tf::Quaternion quat_pre = tf::createQuaternionFromRPY(previous_pose.roll, previous_pose.pitch, previous_pose.yaw);
+  tf::Quaternion quat_imu;
+  tf::quaternionMsgToTF(imu_stack_pose.orientation, quat_imu);
+  tf::Quaternion quat_new = quat_pre * quat_imu;
+  tf::Matrix3x3(quat_new).getRPY(predict_pose_imu.roll, predict_pose_imu.pitch, predict_pose_imu.yaw);
+}
 
-  imu_calc(input->header.stamp);
-
-  previous_time = current_time;
-  previous_imu_roll = imu_roll;
-  previous_imu_pitch = imu_pitch;
-  previous_imu_yaw = imu_yaw;
+static void imu_stack_pose_callback(const geometry_msgs::PoseStamped &msg)
+{
+  imu_stack_pose = msg.pose;
+  imu_calc_stack();
 }
 
 static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
@@ -1037,7 +1054,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     if (_use_imu == true && _use_odom == true)
       imu_odom_calc(current_scan_time);
     if (_use_imu == true && _use_odom == false)
-      imu_calc(current_scan_time);
+      imu_calc_stack();//imu_calc(current_scan_time);
     if (_use_imu == false && _use_odom == true)
       odom_calc(current_scan_time);
 
@@ -1406,11 +1423,11 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     //    br.sendTransform(tf::StampedTransform(transform, current_scan_time, "/map", "/base_link"));
     if (_use_local_transform == true)
     {
-      br.sendTransform(tf::StampedTransform(local_transform * transform, current_scan_time, "/map", "/base_link"));
+      br.sendTransform(tf::StampedTransform(local_transform * transform, current_scan_time, "/map", "/ndt_base_link"));
     }
     else
     {
-      br.sendTransform(tf::StampedTransform(transform, current_scan_time, "/map", "/base_link"));
+      br.sendTransform(tf::StampedTransform(transform, current_scan_time, "/map", "/ndt_base_link"));
     }
 
     matching_end = std::chrono::system_clock::now();
@@ -1421,7 +1438,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
 
     // Set values for /estimate_twist
     estimate_twist_msg.header.stamp = current_scan_time;
-    estimate_twist_msg.header.frame_id = "/base_link";
+    estimate_twist_msg.header.frame_id = "/ndt_base_link";
     estimate_twist_msg.twist.linear.x = current_velocity;
     estimate_twist_msg.twist.linear.y = 0.0;
     estimate_twist_msg.twist.linear.z = 0.0;
@@ -1692,8 +1709,8 @@ int main(int argc, char** argv)
   predict_pose_imu_odom_pub = nh.advertise<geometry_msgs::PoseStamped>("/predict_pose_imu_odom", 10);
   ndt_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/ndt_pose", 10);
   // current_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/current_pose", 10);
-  localizer_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/localizer_pose", 10);
-  estimate_twist_pub = nh.advertise<geometry_msgs::TwistStamped>("/estimate_twist", 10);
+  localizer_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/ndt_localizer_pose", 10);
+  estimate_twist_pub = nh.advertise<geometry_msgs::TwistStamped>("/ndt_estimate_twist", 10);
   estimated_vel_mps_pub = nh.advertise<std_msgs::Float32>("/estimated_vel_mps", 10);
   estimated_vel_kmph_pub = nh.advertise<std_msgs::Float32>("/estimated_vel_kmph", 10);
   estimated_vel_pub = nh.advertise<geometry_msgs::Vector3Stamped>("/estimated_vel", 10);
@@ -1709,7 +1726,8 @@ int main(int argc, char** argv)
   ros::Subscriber points_sub = nh.subscribe("filtered_points", _queue_size, points_callback);
   ros::Subscriber odom_sub = nh.subscribe("/vehicle/odom", _queue_size * 10, odom_callback);
   ros::Subscriber imu_sub = nh.subscribe(_imu_topic.c_str(), _queue_size * 10, imu_callback);
-  ros::Subscriber imu_values = nh.subscribe("/ndt_imu_values", _queue_size * 10, imu_callback);
+  ros::Subscriber imu_stack_sub = nh.subscribe("/ndt_imu_pose_stack", _queue_size * 10, imu_stack_pose_callback);
+
   pthread_t thread;
   pthread_create(&thread, NULL, thread_func, NULL);
 
