@@ -119,6 +119,7 @@ static int init_pos_set = 0;
 
 static pcl::NormalDistributionsTransform<pcl::PointXYZ, pcl::PointXYZ> ndt;
 static cpu::NormalDistributionsTransform<pcl::PointXYZ, pcl::PointXYZ> anh_ndt;
+
 #ifdef CUDA_FOUND
 static std::shared_ptr<gpu::GNormalDistributionsTransform> anh_gpu_ndt_ptr =
     std::make_shared<gpu::GNormalDistributionsTransform>();
@@ -241,6 +242,8 @@ static unsigned int points_map_num = 0;
 
 pthread_mutex_t mutex;
 
+ros::Publisher pub_tmp;
+
 static pose convertPoseIntoRelativeCoordinate(const pose &target_pose, const pose &reference_pose)
 {
     tf::Quaternion target_q;
@@ -313,7 +316,7 @@ static void param_callback(const autoware_config_msgs::ConfigNDT::ConstPtr& inpu
 #endif
 #ifdef USE_PCL_OPENMP
     else if (_method_type == MethodType::PCL_OPENMP)
-      omp_ndt.setStepSize(ndt_res);
+      omp_ndt.setStepSize(step_size);
 #endif
   }
 
@@ -331,7 +334,7 @@ static void param_callback(const autoware_config_msgs::ConfigNDT::ConstPtr& inpu
 #endif
 #ifdef USE_PCL_OPENMP
     else if (_method_type == MethodType::PCL_OPENMP)
-      omp_ndt.setTransformationEpsilon(ndt_res);
+      omp_ndt.setTransformationEpsilon(trans_eps);
 #endif
   }
 
@@ -349,7 +352,7 @@ static void param_callback(const autoware_config_msgs::ConfigNDT::ConstPtr& inpu
 #endif
 #ifdef USE_PCL_OPENMP
     else if (_method_type == MethodType::PCL_OPENMP)
-      omp_ndt.setMaximumIterations(ndt_res);
+      omp_ndt.setMaximumIterations(max_iter);
 #endif
   }
 
@@ -923,14 +926,16 @@ static void imu_callback(const sensor_msgs::Imu::Ptr& input)
   previous_imu_yaw = imu_yaw;
 }
 
+static autoware_msgs::ImuValues imu_values;
 static void imu_values_callback(const autoware_msgs::ImuValues::ConstPtr& input)
-{ 
-  const ros::Time current_time = input->header.stamp;
+{
+  imu_values = *input;
+  /*const ros::Time current_time = input->header.stamp;
   static ros::Time previous_time = current_time;
   const double diff_time = (current_time - previous_time).toSec();
 
   double imu_roll, imu_pitch, imu_yaw;
-  tf::Quaternion imu_orientation = tf::createQuaternionFromRPY(input->roll_deg/180/M_PI, input->pitch_deg/180/M_PI, input->yaw_deg/180/M_PI);
+  tf::Quaternion imu_orientation = tf::createQuaternionFromRPY(input->roll_deg*M_PI/180, input->pitch_deg*M_PI/180, input->yaw_deg*M_PI/180);
   tf::Matrix3x3(imu_orientation).getRPY(imu_roll, imu_pitch, imu_yaw);
   
   static double previous_imu_roll = imu_roll, previous_imu_pitch = imu_pitch, previous_imu_yaw = imu_yaw;
@@ -940,9 +945,9 @@ static void imu_values_callback(const autoware_msgs::ImuValues::ConstPtr& input)
 
   if (diff_time != 0)
   {
-    imu.angular_velocity.x = diff_imu_roll / diff_time;
-    imu.angular_velocity.y = diff_imu_pitch / diff_time;
-    imu.angular_velocity.z = diff_imu_yaw / diff_time;
+    imu.angular_velocity.x = diff_imu_roll;// / diff_time;
+    imu.angular_velocity.y = diff_imu_pitch;// / diff_time;
+    imu.angular_velocity.z = diff_imu_yaw;// / diff_time;
   }
   else
   {
@@ -951,12 +956,20 @@ static void imu_values_callback(const autoware_msgs::ImuValues::ConstPtr& input)
     imu.angular_velocity.z = 0;
   }
 
-  imu_calc(input->header.stamp);
+  imu.header = input->header;
+  //imu.linear_acceleration.x = input->linear_acceleration.x;
+  // imu.linear_acceleration.y = input->linear_acceleration.y;
+  // imu.linear_acceleration.z = input->linear_acceleration.z;
+  imu.linear_acceleration.x = 0;
+  imu.linear_acceleration.y = 0;
+  imu.linear_acceleration.z = 0;
+
+  //imu_values_calc(input->header.stamp);
 
   previous_time = current_time;
   previous_imu_roll = imu_roll;
   previous_imu_pitch = imu_pitch;
-  previous_imu_yaw = imu_yaw;
+  previous_imu_yaw = imu_yaw;*/
 }
 
 static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
@@ -1036,8 +1049,8 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
 
     if (_use_imu == true && _use_odom == true)
       imu_odom_calc(current_scan_time);
-    if (_use_imu == true && _use_odom == false)
-      imu_calc(current_scan_time);
+    //if (_use_imu == true && _use_odom == false)
+    //  imu_calc(current_scan_time);
     if (_use_imu == false && _use_odom == true)
       odom_calc(current_scan_time);
 
@@ -1045,7 +1058,21 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     if (_use_imu == true && _use_odom == true)
       predict_pose_for_ndt = predict_pose_imu_odom;
     else if (_use_imu == true && _use_odom == false)
-      predict_pose_for_ndt = predict_pose_imu;
+    {
+      //predict_pose_for_ndt = predict_pose_imu;
+
+      tf::Quaternion quat_pred = tf::createQuaternionFromRPY(predict_pose.roll, predict_pose.pitch, predict_pose.yaw);
+      tf::Quaternion quat_imu = tf::createQuaternionFromRPY(imu_values.roll_deg*M_PI/180.0, imu_values.pitch_deg*M_PI/180.0, imu_values.yaw_deg*M_PI/180.0);
+      tf::Quaternion quat_new = quat_pred * quat_imu;
+      double roll, pitch, yaw;
+      tf::Matrix3x3(quat_new).getRPY(roll, pitch, yaw);
+      predict_pose_for_ndt.x = predict_pose.x;
+      predict_pose_for_ndt.y = predict_pose.y;
+      predict_pose_for_ndt.z = predict_pose.z;
+      predict_pose_for_ndt.roll = roll;
+      predict_pose_for_ndt.pitch = pitch;
+      predict_pose_for_ndt.yaw = yaw;
+    }
     else if (_use_imu == false && _use_odom == true)
       predict_pose_for_ndt = predict_pose_odom;
     else
@@ -1448,6 +1475,13 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     ndt_stat_msg.use_predict_pose = 0;
 
     ndt_stat_pub.publish(ndt_stat_msg);
+
+    std::stringstream ss_stat;
+    ss_stat << ndt_stat_msg.exe_time << "," << ndt_stat_msg.iteration << "," << ndt_stat_msg.score << "," << ndt_stat_msg.velocity << "," << ndt_stat_msg.acceleration << "," << ndt_stat_msg.use_predict_pose;
+    std_msgs::String stat_str;
+    stat_str.data = ss_stat.str();
+    pub_tmp.publish(stat_str);
+  
     /* Compute NDT_Reliability */
     ndt_reliability.data = Wa * (exe_time / 100.0) * 100.0 + Wb * (iteration / 10.0) * 100.0 +
                            Wc * ((2.0 - trans_probability) / 2.0) * 100.0;
@@ -1686,6 +1720,7 @@ int main(int argc, char** argv)
   initial_pose.yaw = 0.0;
 
   // Publishers
+  pub_tmp= nh.advertise<std_msgs::String>("/ndt_tmp", 10);
   predict_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/predict_pose", 10);
   predict_pose_imu_pub = nh.advertise<geometry_msgs::PoseStamped>("/predict_pose_imu", 10);
   predict_pose_odom_pub = nh.advertise<geometry_msgs::PoseStamped>("/predict_pose_odom", 10);
@@ -1709,7 +1744,7 @@ int main(int argc, char** argv)
   ros::Subscriber points_sub = nh.subscribe("filtered_points", _queue_size, points_callback);
   ros::Subscriber odom_sub = nh.subscribe("/vehicle/odom", _queue_size * 10, odom_callback);
   ros::Subscriber imu_sub = nh.subscribe(_imu_topic.c_str(), _queue_size * 10, imu_callback);
-  ros::Subscriber imu_values = nh.subscribe("/ndt_imu_values", _queue_size * 10, imu_callback);
+  ros::Subscriber imu_values = nh.subscribe("/ndt_imu_values", _queue_size * 10, imu_values_callback);
   pthread_t thread;
   pthread_create(&thread, NULL, thread_func, NULL);
 
