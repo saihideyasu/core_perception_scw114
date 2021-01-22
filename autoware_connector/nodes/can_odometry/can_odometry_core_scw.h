@@ -23,6 +23,7 @@
 #include <ros/ros.h>
 #include <std_msgs/Float32.h>
 #include <tf/transform_broadcaster.h>
+#include <std_msgs/String.h>
 
 // User Defined Includes
 #include "autoware_can_msgs/CANInfo.h"
@@ -84,7 +85,7 @@ private:
   autoware_config_msgs::ConfigCanOdometry config_;
 
   // publisher
-  ros::Publisher pub1_, pub_can_velocity_;
+  ros::Publisher pub1_, pub_can_velocity_, pub_tmp_;
 
   // subscriber
   ros::Subscriber sub1_;

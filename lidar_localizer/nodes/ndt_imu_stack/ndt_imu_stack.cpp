@@ -9,6 +9,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <std_msgs/Float64.h>
 #include <autoware_msgs/ImuValues.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
 
 void geometry_quat_to_rpy(double& roll, double& pitch, double& yaw, const geometry_msgs::Quaternion geometry_quat){
 	tf::Quaternion quat;
@@ -19,12 +20,19 @@ void geometry_quat_to_rpy(double& roll, double& pitch, double& yaw, const geomet
 class NdtImuStack
 {
 private:
+	const double LOWPASS_ALPHA = 0.8;//ローパスフィルタのウェイト
+
 	ros::NodeHandle nh_, pnh_;
 	ros::Publisher pub_imu_pose_stack_, pub_ndt_imu_yaw_;
-	ros::Subscriber sub_imu_, sub_ndt_pose_;
+	ros::Subscriber sub_imu_, sub_ndt_pose_, sub_velocity_, sub_initialpose_;
 
-	geometry_msgs::PoseStamped stack_pose_;
-	ros::Time prev_imu_time_;
+	geometry_msgs::PoseStamped stack_pose_;//imuから計算した位置、角度情報の累積  ndt_pose更新時にリセットされる
+	ros::Time prev_imu_time_;//前回のimu処理時間
+	geometry_msgs::TwistStamped current_vel_;//外部トピックからsubscribeされる現在の速度  距離計算に使用
+	ros::Timer initialpose_timer_;//rvizの2D pose estimateで送られる/initialposeトピックのsubscribe時にセットされるタイマー  ndtの位置合わせを安定させるために、指定秒数imu情報をリセットする
+	bool initialpose_flag_;
+
+	double gravity_x_, gravity_y_, gravity_z_;//ローパスフィルタで作成した重力加速度
 
 	void stack_clear()
 	{
@@ -38,43 +46,23 @@ private:
 		ros::Duration time_diff = msg.header.stamp - prev_imu_time_;
 		double td = time_diff.sec + time_diff.nsec * 1E-9;
 
-		/*Eigen::Translation3f xyz(stack_pose_.pose.position.x, stack_pose_.pose.position.y, stack_pose_.pose.position.z);//translation
-		double roll, pitch, yaw;
-		tf::Quaternion qua;
-		tf::quaternionMsgToTF(stack_pose_.pose.orientation, qua);
-		tf::Matrix3x3(qua).getRPY(roll, pitch, yaw);
-		Eigen::AngleAxisf rot_x(roll, Eigen::Vector3f::UnitX());  //rotation
-		Eigen::AngleAxisf rot_y(pitch, Eigen::Vector3f::UnitY());
-		Eigen::AngleAxisf rot_z(yaw, Eigen::Vector3f::UnitZ());
-		Eigen::Matrix4f mat_pose = (xyz * rot_z * rot_y * rot_x).matrix();
+		//ローパスフィルタで位置情報から重力加速度を除去する。
+		gravity_x_ = LOWPASS_ALPHA * gravity_x_ + (1 - LOWPASS_ALPHA) * msg.linear_acceleration.x;
+		gravity_y_ = LOWPASS_ALPHA * gravity_y_ + (1 - LOWPASS_ALPHA) * msg.linear_acceleration.y;
+		gravity_z_ = LOWPASS_ALPHA * gravity_z_ + (1 - LOWPASS_ALPHA) * msg.linear_acceleration.z;
+		double acc_x = msg.linear_acceleration.x - gravity_x_;
+		double acc_y = msg.linear_acceleration.y - gravity_y_;
+		double acc_z = msg.linear_acceleration.z - gravity_z_;
 
-		Eigen::Translation3f xyz_imu(-msg.linear_acceleration.x*td*10, -msg.linear_acceleration.y*td*10,0);//translation
-		Eigen::AngleAxisf rot_x_imu(0, Eigen::Vector3f::UnitX());  //rotation
-		Eigen::AngleAxisf rot_y_imu(0, Eigen::Vector3f::UnitY());
-		Eigen::AngleAxisf rot_z_imu(-msg.angular_velocity.z * td *1.5, Eigen::Vector3f::UnitZ());
-		Eigen::Matrix4f mat_imu = (xyz_imu * rot_z_imu * rot_y_imu * rot_x_imu).matrix();
+		//変化した移動量の計算
+		double x_vel_imu = current_vel_.twist.linear.x - acc_x / 2.0 * td;
+		double y_vel_imu = current_vel_.twist.linear.y - acc_y / 2.0 * td;
+		double z_vel_imu = current_vel_.twist.linear.z - acc_z / 2.0 * td;
+		double x_imu = x_vel_imu * td;
+		double y_imu = y_vel_imu * td;
+		double z_imu = z_vel_imu * td;
 
-		Eigen::Matrix4f mat_new_pose = mat_pose * mat_imu;
-		tf::Matrix3x3 mat_b;  // base_link
-		mat_b.setValue(static_cast<double>(mat_new_pose(0, 0)), static_cast<double>(mat_new_pose(0, 1)), static_cast<double>(mat_new_pose(0, 2)),
-                   static_cast<double>(mat_new_pose(1, 0)), static_cast<double>(mat_new_pose(1, 1)), static_cast<double>(mat_new_pose(1, 2)),
-                   static_cast<double>(mat_new_pose(2, 0)), static_cast<double>(mat_new_pose(2, 1)), static_cast<double>(mat_new_pose(2, 2)));
-
-		// Update ndt_pose
-		stack_pose_.pose.position.x = mat_new_pose(0, 3);
-		stack_pose_.pose.position.y = mat_new_pose(1, 3);
-		stack_pose_.pose.position.z = mat_new_pose(2, 3);*/
-
-
-		/*double roll_new, pitch_new, yaw_new;
-		mat_new_pose.getRPY(roll_new, pitch_new, yaw_new, 1);
-		geometry_quat_to_rpy(roll_new, pitch_new, yaw_new,stack_pose_.pose.orientation);*/
-		
-		
-		
-		/*stack_pose_.pose.position.x -= msg.linear_acceleration.x * td*100;
-		stack_pose_.pose.position.y -= msg.linear_acceleration.y * td*100;*/
-
+		//変化した角度量の計算		
 		double yaw_imu = -msg.angular_velocity.z * td;
 		tf::Quaternion quat_imu = tf::createQuaternionFromYaw(yaw_imu);
 		tf::Quaternion quat_orig;
@@ -90,9 +78,9 @@ private:
 		imu_pub_data.roll_deg = 0;
 		imu_pub_data.pitch_deg = 0;
 		imu_pub_data.yaw_deg = pub_yaw * 180 / M_PI;
-		imu_pub_data.x = 0;
-		imu_pub_data.y = 0;
-		imu_pub_data.z = 0;
+		imu_pub_data.x = x_vel_imu * 1000;
+		imu_pub_data.y = 0;//y_vel_imu * 1000;
+		imu_pub_data.z = 0;//z_vel_imu * 1000;
 		pub_ndt_imu_yaw_.publish(imu_pub_data);
 
 		stack_pose_.header.stamp = msg.header.stamp;
@@ -104,21 +92,54 @@ private:
 	void callbackPose(const geometry_msgs::PoseStamped &msg)
 	{
 		stack_clear();
-		//stack_pose_.header.stamp = msg.header.stamp;
-		//pub_imu_pose_stack_.publish(stack_pose_);
+	}
+
+	void callbackVelocity(const geometry_msgs::TwistStamped &msg)
+	{
+		if(initialpose_flag_ == true)
+		{
+			current_vel_.header.stamp = msg.header.stamp;
+			current_vel_.twist.linear.x = current_vel_.twist.linear.y = current_vel_.twist.linear.z = 0;
+			current_vel_.twist.angular.x = current_vel_.twist.angular.y = current_vel_.twist.angular.z = 0;
+		}
+		else
+		{
+			current_vel_ = msg;
+		}
+	}
+
+	void callbackInitialpose(const geometry_msgs::PoseWithCovarianceStamped &msg)
+	{
+		initialpose_flag_ = true;
+		initialpose_timer_.start();
+	}
+
+	void initialposeTimerCallback(const ros::TimerEvent& e)
+	{
+		initialpose_flag_ = false;
+		initialpose_timer_.stop();
 	}
 public:
 	NdtImuStack(ros::NodeHandle nh, ros::NodeHandle pnh)
 		: nh_(nh)
 		, pnh_(pnh)
+		, initialpose_flag_(false)
+		, gravity_x_(0), gravity_y_(0), gravity_z_(0)
 	{
 		prev_imu_time_ = ros::Time::now();
 		stack_clear();
+
+		current_vel_.twist.linear.x = current_vel_.twist.linear.y = current_vel_.twist.linear.z = 0;
+		current_vel_.twist.angular.x = current_vel_.twist.angular.y = current_vel_.twist.angular.z = 0;
 
 		pub_imu_pose_stack_ = nh_.advertise<geometry_msgs::PoseStamped>("/ndt_imu_pose_stack", 1);
 		pub_ndt_imu_yaw_ = nh_.advertise<autoware_msgs::ImuValues>("/ndt_imu_values", 1);
 		sub_imu_ = nh_.subscribe("/imu/data", 10, &NdtImuStack::callbackImu, this);
 		sub_ndt_pose_ = nh_.subscribe("/ndt_pose", 10, &NdtImuStack::callbackPose, this);
+		sub_velocity_ = nh_.subscribe("/current_velocity", 10, &NdtImuStack::callbackVelocity, this);
+		sub_initialpose_ = nh_.subscribe("/initialpose", 10, &NdtImuStack::callbackInitialpose, this);
+		initialpose_timer_ = nh_.createTimer(ros::Duration(0.2), &NdtImuStack::initialposeTimerCallback, this);
+		initialpose_timer_.stop();
 	}
 };
 

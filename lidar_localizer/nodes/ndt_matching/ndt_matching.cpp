@@ -980,8 +980,8 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     matching_start = std::chrono::system_clock::now();
 
     static tf::TransformBroadcaster br;
-    tf::Transform transform;
-    tf::Quaternion predict_q, ndt_q, current_q, localizer_q;
+    tf::Transform transform, predict_ndt_transform;
+    tf::Quaternion predict_q, ndt_q, current_q, localizer_q, predict_ndt_q;
 
     pcl::PointXYZ p;
     pcl::PointCloud<pcl::PointXYZ> filtered_scan;
@@ -1061,17 +1061,38 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     {
       //predict_pose_for_ndt = predict_pose_imu;
 
-      tf::Quaternion quat_pred = tf::createQuaternionFromRPY(predict_pose.roll, predict_pose.pitch, predict_pose.yaw);
+      Eigen::Translation3f tl_btol_p(predict_pose.x, predict_pose.y, predict_pose.z);                 // tl: translation
+      Eigen::AngleAxisf rot_x_btol_p(predict_pose.roll, Eigen::Vector3f::UnitX());  // rot: rotation
+      Eigen::AngleAxisf rot_y_btol_p(predict_pose.pitch, Eigen::Vector3f::UnitY());
+      Eigen::AngleAxisf rot_z_btol_p(predict_pose.yaw, Eigen::Vector3f::UnitZ());
+      Eigen::Matrix4f tf_predict = (tl_btol_p * rot_z_btol_p * rot_y_btol_p * rot_x_btol_p).matrix();
+
+      Eigen::Translation3f tl_btol_i(imu_values.x, imu_values.y, imu_values.z);                 // tl: translation
+      Eigen::AngleAxisf rot_x_btol_i(imu_values.roll_deg * M_PI / 180, Eigen::Vector3f::UnitX());  // rot: rotation
+      Eigen::AngleAxisf rot_y_btol_i(imu_values.pitch_deg * M_PI / 180, Eigen::Vector3f::UnitY());
+      Eigen::AngleAxisf rot_z_btol_i(imu_values.yaw_deg * M_PI / 180, Eigen::Vector3f::UnitZ());
+      Eigen::Matrix4f tf_imu = (tl_btol_i * rot_z_btol_i * rot_y_btol_i * rot_x_btol_i).matrix();
+
+      Eigen::Matrix4f tf_ptoi = tf_predict * tf_imu;
+
+      /*tf::Quaternion quat_pred = tf::createQuaternionFromRPY(predict_pose.roll, predict_pose.pitch, predict_pose.yaw);
       tf::Quaternion quat_imu = tf::createQuaternionFromRPY(imu_values.roll_deg*M_PI/180.0, imu_values.pitch_deg*M_PI/180.0, imu_values.yaw_deg*M_PI/180.0);
       tf::Quaternion quat_new = quat_pred * quat_imu;
       double roll, pitch, yaw;
-      tf::Matrix3x3(quat_new).getRPY(roll, pitch, yaw);
-      predict_pose_for_ndt.x = predict_pose.x;
-      predict_pose_for_ndt.y = predict_pose.y;
-      predict_pose_for_ndt.z = predict_pose.z;
-      predict_pose_for_ndt.roll = roll;
-      predict_pose_for_ndt.pitch = pitch;
-      predict_pose_for_ndt.yaw = yaw;
+      tf::Matrix3x3(quat_new).getRPY(roll, pitch, yaw);*/
+
+      tf::Matrix3x3 mat_b;  // base_link
+      mat_b.setValue(static_cast<double>(tf_ptoi(0, 0)), static_cast<double>(tf_ptoi(0, 1)), static_cast<double>(tf_ptoi(0, 2)),
+                    static_cast<double>(tf_ptoi(1, 0)), static_cast<double>(tf_ptoi(1, 1)), static_cast<double>(tf_ptoi(1, 2)),
+                    static_cast<double>(tf_ptoi(2, 0)), static_cast<double>(tf_ptoi(2, 1)), static_cast<double>(tf_ptoi(2, 2)));
+
+      predict_pose_for_ndt.x = tf_ptoi(0,3);
+      predict_pose_for_ndt.y = tf_ptoi(1,3);
+      predict_pose_for_ndt.z = tf_ptoi(2,3);
+      mat_b.getRPY(predict_pose_for_ndt.roll, predict_pose_for_ndt.pitch, predict_pose_for_ndt.yaw, 1);
+      //predict_pose_for_ndt.roll = roll;
+      //predict_pose_for_ndt.pitch = pitch;
+      //predict_pose_for_ndt.yaw = yaw;
     }
     else if (_use_imu == false && _use_odom == true)
       predict_pose_for_ndt = predict_pose_odom;
@@ -1379,6 +1400,8 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     }
 
     current_q.setRPY(current_pose.roll, current_pose.pitch, current_pose.yaw);
+    predict_ndt_q.setRPY(predict_pose_for_ndt.roll, predict_pose_for_ndt.pitch, predict_pose_for_ndt.yaw);
+
     // current_pose is published by vel_pose_mux
     /*
     current_pose_msg.header.frame_id = "/map";
@@ -1430,14 +1453,19 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     // Send TF "/base_link" to "/map"
     transform.setOrigin(tf::Vector3(current_pose.x, current_pose.y, current_pose.z));
     transform.setRotation(current_q);
+    predict_ndt_transform.setOrigin(tf::Vector3(predict_pose_for_ndt.x, predict_pose_for_ndt.y, predict_pose_for_ndt.z));
+    predict_ndt_transform.setRotation(predict_ndt_q);
+
     //    br.sendTransform(tf::StampedTransform(transform, current_scan_time, "/map", "/base_link"));
     if (_use_local_transform == true)
     {
       br.sendTransform(tf::StampedTransform(local_transform * transform, current_scan_time, "/map", "/base_link"));
+      br.sendTransform(tf::StampedTransform(local_transform * predict_ndt_transform, current_scan_time, "/map", "/predict_base_link"));
     }
     else
     {
       br.sendTransform(tf::StampedTransform(transform, current_scan_time, "/map", "/base_link"));
+      br.sendTransform(tf::StampedTransform(predict_ndt_transform, current_scan_time, "/map", "/predict_base_link"));
     }
 
     matching_end = std::chrono::system_clock::now();
