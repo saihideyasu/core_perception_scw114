@@ -5,6 +5,8 @@ find_package(autoware_build_flags REQUIRED)
 
 find_package(catkin REQUIRED COMPONENTS
   autoware_msgs
+  autoware_system_msgs
+  autoware_config_msgs
   cmake_modules
   cv_bridge
   geometry_msgs
@@ -137,6 +139,22 @@ add_dependencies(
   ${catkin_EXPORTED_TARGETS}
 )
 
+### period_signal ###
+add_executable(
+  period_signal
+  nodes/period_signal/period_signal.cpp
+)
+
+target_link_libraries(
+  period_signal
+  ${catkin_LIBRARIES}
+)
+
+add_dependencies(
+  period_signal
+  ${catkin_EXPORTED_TARGETS}
+)
+
 ### tlr_tuner ###
 EXECUTE_PROCESS(
   COMMAND pkg-config --variable=host_bins Qt5Core
@@ -232,7 +250,7 @@ target_link_libraries(
 )
 
 install(
-  TARGETS region_tlr feat_proj tlr_tuner feat_proj_lanelet2 roi_extractor label_maker libcontext tl_switch
+  TARGETS region_tlr feat_proj tlr_tuner feat_proj_lanelet2 roi_extractor label_maker libcontext tl_switch period_signal
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
