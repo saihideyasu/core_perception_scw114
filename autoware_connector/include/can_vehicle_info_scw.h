@@ -22,10 +22,10 @@ namespace autoware_connector
 
 const double handle_angle_right_max = 730;
 const double handle_angle_left_max = 765;
-const double wheelrad_to_steering_can_value_left = 20639.7444769791;//20935.4958411006;//20691.8161699557;//20952.8189547718;
-const double wheelrad_to_steering_can_value_right = 20066.8329952857;//20791.4464661611;//20802.5331916036;//20961.415734248;
-const double wheelrad_to_steering_can_value_left_intercept = 277.358467233321;
-const double wheelrad_to_steering_can_value_right_intercept = 111.715455085083;
+const double wheelrad_to_steering_can_value_left = 20935.4958411006;//20639.7444769791;//20935.4958411006;//20691.8161699557;//20952.8189547718;
+const double wheelrad_to_steering_can_value_right = 20791.4464661611;//20066.8329952857;//20791.4464661611;//20802.5331916036;//20961.415734248;
+const double wheelrad_to_steering_can_value_left_intercept = 0;//277.358467233321;
+const double wheelrad_to_steering_can_value_right_intercept = 0;//111.715455085083;
 const double angle_velocity_correction_slope_ = -0.0150859385;
 const double angle_velocity_correction_intersept_ = 1.1773688546;
 const double angle_magn_right = handle_angle_right_max / 15000;
@@ -85,11 +85,11 @@ struct VehicleInfo
       }
       //std::cout << "wheel : " << wheel_val << std::endl;
       double ret = tan(wheel_val) * cur_vel_mps / wheel_base;
-      ros::Time time =  ros::Time::now();
-      std::cout << "aaa," << cur_vel_mps << "," << ret << "," << time.sec<< "," << time.nsec << "," << wheel_val << std::endl;
-      double hosei = (angle_velocity_correction_slope_ * cur_vel_mps + angle_velocity_correction_intersept_);
-      if(hosei < 1) hosei = 1;
-      ret *= hosei;
+      //ros::Time time =  ros::Time::now();
+      //std::cout << "aaa," << cur_vel_mps << "," << ret << "," << time.sec<< "," << time.nsec << "," << wheel_val << std::endl;
+      //double hosei = (angle_velocity_correction_slope_ * cur_vel_mps + angle_velocity_correction_intersept_);
+      //if(hosei < 1) hosei = 1;
+      //ret *= hosei;
       return is_stored ? ret : 0;
   }
   double getCurrentSteeringAngle(const double steering_wheel_angle_rad)  // steering wheel [rad] -> steering [rad]

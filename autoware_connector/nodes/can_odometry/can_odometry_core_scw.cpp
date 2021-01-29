@@ -18,6 +18,13 @@
 
 namespace autoware_connector
 {
+
+void geometry_quat_to_rpy(double& roll, double& pitch, double& yaw, const geometry_msgs::Quaternion geometry_quat){
+	tf::Quaternion quat;
+	quaternionMsgToTF(geometry_quat, quat);
+	tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);  //rpy are Pass by Reference
+}
+
 // Constructor
 CanOdometryNode::CanOdometryNode() : private_nh_("~"), v_info_(), odom_(ros::Time::now())
 {
@@ -49,6 +56,7 @@ void CanOdometryNode::initForROS()
   sub1_ = nh_.subscribe("vehicle_status", 10, &CanOdometryNode::callbackFromVehicleStatus, this);
   sub_bus_ = nh_.subscribe("/microbus/can_receive502", 10, &CanOdometryNode::callbackFromVehicleStatus_microbus, this);
   sub_config_ = nh_.subscribe("/config/can2odom_scw", 10, &CanOdometryNode::callbackConfig, this);
+  //sub_gnss_pose_ = nh_.subscribe("/gnss_pose", 10, &CanOdometryNode::callbackGnssPose, this);//車角度確認用
 
   // setup publisher
   pub1_ = nh_.advertise<nav_msgs::Odometry>("/vehicle/odom", 10);
@@ -89,6 +97,11 @@ void CanOdometryNode::publishOdometry(const autoware_msgs::VehicleStatusConstPtr
 
   // publish the message
   pub1_.publish(odom);
+}
+
+void CanOdometryNode::callbackGnssPose(const geometry_msgs::PoseStampedConstPtr &msg)
+{
+  gnss_pose_ = *msg;
 }
 
 void CanOdometryNode::callbackFromVehicleStatus(const autoware_msgs::VehicleStatusConstPtr& msg)
@@ -140,12 +153,14 @@ void CanOdometryNode::callbackFromVehicleStatus_microbus(const autoware_can_msgs
   twist.twist.angular.z = vth;
   pub_can_velocity_.publish(twist);
 
+  /*double groll, gpitch, gyaw;
+  geometry_quat_to_rpy(groll, gpitch, gyaw, gnss_pose_.pose.orientation);
   std::stringstream ss;
   ss << std::fixed;
-  ss << std::setprecision(6) << vx << "," << vth;
+  ss << std::setprecision(6) << vx << "," << vth << "," << gyaw << "," << msg->angle_actual;
   std_msgs::String str;
   str.data = ss.str();
-  pub_tmp_.publish(str);
+  pub_tmp_.publish(str);*/
 }
 
 }  // autoware_connector

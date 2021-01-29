@@ -89,16 +89,18 @@ private:
 
   // subscriber
   ros::Subscriber sub1_;
-  ros::Subscriber sub_bus_, sub_config_;
+  ros::Subscriber sub_bus_, sub_config_, sub_gnss_pose_;
 
   // variables
   VehicleInfo v_info_;
   Odometry odom_;
+  geometry_msgs::PoseStamped gnss_pose_;
 
   // callbacks
   void callbackConfig(const autoware_config_msgs::ConfigCanOdometry &msg);
   void callbackFromVehicleStatus(const autoware_msgs::VehicleStatusConstPtr& msg);
   void callbackFromVehicleStatus_microbus(const autoware_can_msgs::MicroBusCan502ConstPtr &msg);
+  void callbackGnssPose(const geometry_msgs::PoseStampedConstPtr &msg);
 
   // initializer
   void initForROS();

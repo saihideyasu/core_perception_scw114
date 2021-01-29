@@ -149,6 +149,9 @@ static geometry_msgs::PoseStamped predict_pose_imu_odom_msg;
 static ros::Publisher ndt_pose_pub;
 static geometry_msgs::PoseStamped ndt_pose_msg;
 
+static ros::Publisher predict_pose_for_ndt_pub;
+static geometry_msgs::PoseStamped predict_pose_for_ndt_msg;
+
 // current_pose is published by vel_pose_mux
 /*
 static ros::Publisher current_pose_pub;
@@ -1061,10 +1064,10 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     {
       //predict_pose_for_ndt = predict_pose_imu;
 
-      Eigen::Translation3f tl_btol_p(predict_pose.x, predict_pose.y, predict_pose.z);                 // tl: translation
-      Eigen::AngleAxisf rot_x_btol_p(predict_pose.roll, Eigen::Vector3f::UnitX());  // rot: rotation
-      Eigen::AngleAxisf rot_y_btol_p(predict_pose.pitch, Eigen::Vector3f::UnitY());
-      Eigen::AngleAxisf rot_z_btol_p(predict_pose.yaw, Eigen::Vector3f::UnitZ());
+      Eigen::Translation3f tl_btol_p(previous_pose.x, previous_pose.y, previous_pose.z);                 // tl: translation
+      Eigen::AngleAxisf rot_x_btol_p(previous_pose.roll, Eigen::Vector3f::UnitX());  // rot: rotation
+      Eigen::AngleAxisf rot_y_btol_p(previous_pose.pitch, Eigen::Vector3f::UnitY());
+      Eigen::AngleAxisf rot_z_btol_p(previous_pose.yaw, Eigen::Vector3f::UnitZ());
       Eigen::Matrix4f tf_predict = (tl_btol_p * rot_z_btol_p * rot_y_btol_p * rot_x_btol_p).matrix();
 
       Eigen::Translation3f tl_btol_i(imu_values.x, imu_values.y, imu_values.z);                 // tl: translation
@@ -1443,6 +1446,19 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
       localizer_pose_msg.pose.orientation.w = localizer_q.w();
     }
 
+    tf::Quaternion predict_pose_for_ndt_quat;
+    predict_pose_for_ndt_quat.setRPY(predict_pose_for_ndt.roll, predict_pose_for_ndt.pitch, predict_pose_for_ndt.yaw);
+    predict_pose_for_ndt_msg.header.frame_id = "/map";
+    predict_pose_for_ndt_msg.header.stamp = current_scan_time;
+    predict_pose_for_ndt_msg.pose.position.x = predict_pose_for_ndt.x;
+    predict_pose_for_ndt_msg.pose.position.y = predict_pose_for_ndt.y;
+    predict_pose_for_ndt_msg.pose.position.z = predict_pose_for_ndt.z;
+    predict_pose_for_ndt_msg.pose.orientation.x = predict_pose_for_ndt_quat.x();
+    predict_pose_for_ndt_msg.pose.orientation.y = predict_pose_for_ndt_quat.y();
+    predict_pose_for_ndt_msg.pose.orientation.z = predict_pose_for_ndt_quat.z();
+    predict_pose_for_ndt_msg.pose.orientation.w = predict_pose_for_ndt_quat.w();
+    predict_pose_for_ndt_pub.publish(predict_pose_for_ndt_msg);
+
     predict_pose_pub.publish(predict_pose_msg);
     health_checker_ptr_->CHECK_RATE("topic_rate_ndt_pose_slow", 8, 5, 1, "topic ndt_pose publish rate slow.");
     ndt_pose_pub.publish(ndt_pose_msg);
@@ -1753,10 +1769,11 @@ int main(int argc, char** argv)
   predict_pose_imu_pub = nh.advertise<geometry_msgs::PoseStamped>("/predict_pose_imu", 10);
   predict_pose_odom_pub = nh.advertise<geometry_msgs::PoseStamped>("/predict_pose_odom", 10);
   predict_pose_imu_odom_pub = nh.advertise<geometry_msgs::PoseStamped>("/predict_pose_imu_odom", 10);
+  predict_pose_for_ndt_pub = nh.advertise<geometry_msgs::PoseStamped>("/predict_pose_for_ndt", 10);
   ndt_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/ndt_pose", 10);
   // current_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/current_pose", 10);
-  localizer_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/localizer_pose", 10);
-  estimate_twist_pub = nh.advertise<geometry_msgs::TwistStamped>("/estimate_twist", 10);
+  localizer_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/ndt_localizer_pose", 10);
+  estimate_twist_pub = nh.advertise<geometry_msgs::TwistStamped>("/ndt_estimate_twist", 10);
   estimated_vel_mps_pub = nh.advertise<std_msgs::Float32>("/estimated_vel_mps", 10);
   estimated_vel_kmph_pub = nh.advertise<std_msgs::Float32>("/estimated_vel_kmph", 10);
   estimated_vel_pub = nh.advertise<geometry_msgs::Vector3Stamped>("/estimated_vel", 10);
