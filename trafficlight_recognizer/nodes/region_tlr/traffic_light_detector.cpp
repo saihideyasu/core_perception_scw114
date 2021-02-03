@@ -20,6 +20,8 @@
 
 #include <algorithm>
 #include <vector>
+#include <ros/ros.h>
+#include <cv_bridge/cv_bridge.h>
 
 #define BLACK CV_RGB(0, 0, 0)
 #define WHITE CV_RGB(255, 255, 255)
@@ -161,7 +163,8 @@ static bool checkExtinctionLight(const cv::Mat& src_img, const cv::Point top_lef
 
 static cv::Mat signalDetect_inROI(const cv::Mat& roi, const cv::Mat& src_img, const double estimatedRadius,
                                   const cv::Point roi_topLeft,
-                                  bool in_turn_signal  // if true it will not try to mask by using "circularity""
+                                  bool in_turn_signal,  // if true it will not try to mask by using "circularity""
+                                  ros::Publisher green_pub, ros::Publisher yellow_pub, ros::Publisher red_pub, bool publish_mask
 )
 {
   /* reduce noise */
@@ -180,6 +183,16 @@ static cv::Mat signalDetect_inROI(const cv::Mat& roi, const cv::Mat& src_img, co
   cv::Mat green_mask(roi.rows, roi.cols, CV_8UC1);
   colorExtraction(noiseReduced, &green_mask, thSet.Green.Hue.lower, thSet.Green.Hue.upper, thSet.Green.Sat.lower,
                   thSet.Green.Sat.upper, thSet.Green.Val.lower, thSet.Green.Val.upper);
+
+  if(publish_mask)
+  {
+    sensor_msgs::ImagePtr green_ptr = cv_bridge::CvImage(std_msgs::Header(), "mono8", green_mask).toImageMsg();
+    green_pub.publish(green_ptr);
+    sensor_msgs::ImagePtr yellow_ptr = cv_bridge::CvImage(std_msgs::Header(), "mono8", yellow_mask).toImageMsg();
+    yellow_pub.publish(yellow_ptr);
+    sensor_msgs::ImagePtr red_ptr = cv_bridge::CvImage(std_msgs::Header(), "mono8", red_mask).toImageMsg();
+    red_pub.publish(red_ptr);
+  }
 
   /* combine all color mask and create binarized image */
   cv::Mat binarized = cv::Mat::zeros(roi.rows, roi.cols, CV_8UC1);
@@ -322,7 +335,7 @@ TrafficLightDetector::TrafficLightDetector()
 {
 }
 
-void TrafficLightDetector::brightnessDetect(const cv::Mat& input)
+void TrafficLightDetector::brightnessDetect(const cv::Mat& input, ros::Publisher green_pub, ros::Publisher yellow_pub, ros::Publisher red_pub, bool publish_mask)
 {
   cv::Mat tmpImage;
   input.copyTo(tmpImage);
@@ -360,7 +373,7 @@ void TrafficLightDetector::brightnessDetect(const cv::Mat& input)
 
     /* search the place where traffic signals seem to be */
     cv::Mat signalMask = signalDetect_inROI(roi_HSV, input.clone(), context.lampRadius, context.topLeft,
-                                            context.leftTurnSignal || context.rightTurnSignal);
+                                            context.leftTurnSignal || context.rightTurnSignal, green_pub, yellow_pub, red_pub, publish_mask);
 
     /* detect which color is dominant */
     cv::Mat extracted_HSV;

@@ -38,9 +38,14 @@
 #include <std_msgs/String.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
+#include <autoware_config_msgs/ConfigRegionTlr.h>
 
 thresholdSet thSet;
 
+//config
+autoware_config_msgs::ConfigRegionTlr config;
+
+static ros::Publisher green_mono_pub, yellow_mono_pub, red_mono_pub;
 static ros::Publisher signalState_pub;
 static ros::Publisher signalStateString_pub;
 static ros::Publisher marker_pub;
@@ -208,7 +213,7 @@ static void extractedPos_cb(const autoware_msgs::Signals::ConstPtr& extractedPos
   /* Set subscribed signal position into detector */
   Context::SetContexts(&(detector.contexts), extractedPos, frame.rows, frame.cols);
 
-  detector.brightnessDetect(frame);
+  detector.brightnessDetect(frame, green_mono_pub, yellow_mono_pub, red_mono_pub, config.publish_mask);
 
   /* publish result */
   autoware_msgs::TrafficLight state_msg;
@@ -446,6 +451,37 @@ static void superimpose_cb(const std_msgs::Bool::ConstPtr& config_msg)
   }
 } /* static void superimpose_cb() */
 
+void config_cb(const autoware_config_msgs::ConfigRegionTlr& msg)
+{
+  thSet.Red.Hue.upper = static_cast<double>(msg.daytime_red_upper);
+  thSet.Red.Hue.lower = static_cast<double>(msg.daytime_red_lower);
+
+  thSet.Yellow.Hue.upper = static_cast<double>(msg.daytime_yellow_upper);
+  thSet.Yellow.Hue.lower = static_cast<double>(msg.daytime_yellow_lower);
+
+  thSet.Green.Hue.upper = static_cast<double>(msg.daytime_green_upper);
+  thSet.Green.Hue.lower = static_cast<double>(msg.daytime_green_lower);
+
+  show_superimpose_result = msg.display_superimpose;
+
+  if (show_superimpose_result)
+  {
+    cv::namedWindow(window_name, cv::WINDOW_NORMAL);
+    cv::startWindowThread();
+  }
+
+  if (!show_superimpose_result)
+  {
+    if (cvGetWindowHandle(window_name.c_str()) != NULL)
+    {
+      cv::destroyWindow(window_name);
+      cv::waitKey(1);
+    }
+  }
+
+  config = msg;
+}
+
 int main(int argc, char* argv[])
 {
   // printf("***** Traffic lights app *****\n");
@@ -485,16 +521,20 @@ int main(int argc, char* argv[])
   private_nh.param<std::string>("image_raw_topic", image_topic_name, "/image_raw");
   private_nh.param<std::string>("camera_light_color_topic", camera_light_color_topic_name, "/camera_light_color");
 
+  ros::Subscriber config_sub = n.subscribe("/config/region_tlr", 1, config_cb);
   ros::Subscriber image_sub = n.subscribe(image_topic_name, 1, image_raw_cb);
   ros::Subscriber position_sub = n.subscribe("/roi_signal", 1, extractedPos_cb);
   ros::Subscriber tunedResult_sub = n.subscribe("/tuned_result", 1, tunedResult_cb);
-  ros::Subscriber superimpose_sub = n.subscribe("/config/superimpose", 1, superimpose_cb);
+  //ros::Subscriber superimpose_sub = n.subscribe("/config/superimpose", 1, superimpose_cb);
 
   signalState_pub =
       n.advertise<autoware_msgs::TrafficLight>(camera_light_color_topic_name, ADVERTISE_QUEUE_SIZE, ADVERTISE_LATCH);
   signalStateString_pub = n.advertise<std_msgs::String>("/sound_player", ADVERTISE_QUEUE_SIZE);
   marker_pub = n.advertise<visualization_msgs::MarkerArray>("tlr_result", ADVERTISE_QUEUE_SIZE);
   superimpose_image_pub = n.advertise<sensor_msgs::Image>("tlr_superimpose_image", ADVERTISE_QUEUE_SIZE);
+  green_mono_pub = n.advertise<sensor_msgs::Image>("green_mono", ADVERTISE_QUEUE_SIZE);
+  yellow_mono_pub = n.advertise<sensor_msgs::Image>("yellow_mono", ADVERTISE_QUEUE_SIZE);
+  red_mono_pub = n.advertise<sensor_msgs::Image>("red_mono", ADVERTISE_QUEUE_SIZE);
 
   signal_state_array_publisher_ =
       n.advertise<autoware_msgs::TrafficLightResultArray>("tlr_result_array", ADVERTISE_QUEUE_SIZE);

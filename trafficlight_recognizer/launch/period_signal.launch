@@ -1,0 +1,5 @@
+<launch>
+  <node pkg="trafficlight_recognizer" type="period_signal" name="period_signal" output="log">
+    <!-- remap from="light_color" to="light_color_period_signal" / -->
+  </node>
+</launch>

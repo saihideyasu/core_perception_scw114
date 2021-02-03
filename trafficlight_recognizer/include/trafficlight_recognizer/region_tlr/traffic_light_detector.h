@@ -23,6 +23,7 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/features2d/features2d.hpp>
 #include "trafficlight_recognizer/context.h"
+#include <ros/ros.h>
 
 #define MY_COLOR_PURPLE cv::Scalar(255, 0, 255)
 #define MY_COLOR_RED cv::Scalar(0, 0, 255)
@@ -48,7 +49,7 @@ class TrafficLightDetector
 {
 public:
   TrafficLightDetector();
-  void brightnessDetect(const cv::Mat& input);
+  void brightnessDetect(const cv::Mat& input, ros::Publisher green_pub, ros::Publisher yellow_pub, ros::Publisher red_pub, bool publish_mask);
   void colorDetect(const cv::Mat& input, cv::Mat* output, const cv::Rect coords, int Hmin, int Hmax);
   std::vector<Context> contexts;
 };
@@ -56,9 +57,9 @@ public:
 enum daytime_Hue_threshold
 {
   DAYTIME_RED_LOWER = 340,
-  DAYTIME_RED_UPPER = 50,
-  DAYTIME_YELLOW_LOWER = 50,
-  DAYTIME_YELLOW_UPPER = 70,
+  DAYTIME_RED_UPPER = 20,//50,
+  DAYTIME_YELLOW_LOWER = 20,//50,
+  DAYTIME_YELLOW_UPPER = 150,//70,
   DAYTIME_GREEN_LOWER = 80,   // 120,//140,
   DAYTIME_GREEN_UPPER = 190,  // 180,
 };
