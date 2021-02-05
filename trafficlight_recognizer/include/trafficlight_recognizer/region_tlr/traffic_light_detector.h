@@ -49,7 +49,8 @@ class TrafficLightDetector
 {
 public:
   TrafficLightDetector();
-  void brightnessDetect(const cv::Mat& input, ros::Publisher green_pub, ros::Publisher yellow_pub, ros::Publisher red_pub, bool publish_mask);
+  void brightnessDetect(const cv::Mat& input, ros::Publisher green_pub, ros::Publisher yellow_pub, ros::Publisher red_pub,
+                        ros::Publisher bright_mask_pub, ros::Publisher circle_level_pub, bool publish_mask, float circle_level_th);
   void colorDetect(const cv::Mat& input, cv::Mat* output, const cv::Rect coords, int Hmin, int Hmax);
   std::vector<Context> contexts;
 };

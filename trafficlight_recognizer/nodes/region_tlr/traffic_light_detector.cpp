@@ -18,6 +18,7 @@
 #include "trafficlight_recognizer/region_tlr/region_tlr.h"
 #include "trafficlight_recognizer/region_tlr/traffic_light_detector.h"
 
+#include <std_msgs/String.h>
 #include <algorithm>
 #include <vector>
 #include <ros/ros.h>
@@ -164,7 +165,9 @@ static bool checkExtinctionLight(const cv::Mat& src_img, const cv::Point top_lef
 static cv::Mat signalDetect_inROI(const cv::Mat& roi, const cv::Mat& src_img, const double estimatedRadius,
                                   const cv::Point roi_topLeft,
                                   bool in_turn_signal,  // if true it will not try to mask by using "circularity""
-                                  ros::Publisher green_pub, ros::Publisher yellow_pub, ros::Publisher red_pub, bool publish_mask
+                                  ros::Publisher green_pub, ros::Publisher yellow_pub, ros::Publisher red_pub,
+                                  ros::Publisher bright_mask_pub, ros::Publisher circle_level_pub, bool publish_mask,
+                                  float circle_level_th
 )
 {
   /* reduce noise */
@@ -184,6 +187,7 @@ static cv::Mat signalDetect_inROI(const cv::Mat& roi, const cv::Mat& src_img, co
   colorExtraction(noiseReduced, &green_mask, thSet.Green.Hue.lower, thSet.Green.Hue.upper, thSet.Green.Sat.lower,
                   thSet.Green.Sat.upper, thSet.Green.Val.lower, thSet.Green.Val.upper);
 
+  //sai_add
   if(publish_mask)
   {
     sensor_msgs::ImagePtr green_ptr = cv_bridge::CvImage(std_msgs::Header(), "mono8", green_mask).toImageMsg();
@@ -207,6 +211,7 @@ static cv::Mat signalDetect_inROI(const cv::Mat& roi, const cv::Mat& src_img, co
 
   cv::Mat bright_mask = cv::Mat::zeros(roi.rows, roi.cols, CV_8UC1);
 
+  std::stringstream circle_level_ss;
   int contours_idx = 0;
   std::vector<regionCandidate> candidates;
   for (unsigned int i = 0; i < bright_contours.size(); i++)
@@ -217,13 +222,14 @@ static cv::Mat signalDetect_inROI(const cv::Mat& roi, const cv::Mat& src_img, co
     double area = contourArea(bright_contours.at(contours_idx));  // unit : pixel
     double perimeter = arcLength(bright_contours.at(contours_idx), true);
     double circleLevel = (IsNearlyZero(perimeter)) ? 0.0f : (4.0f * CV_PI * area / pow(perimeter, 2));
+    circle_level_ss << i << "," << circleLevel << ":";
 
     double area_lower_limit =
         (3 * sqrt(3)) * pow(estimatedRadius / 3.0, 2) / 4;     // the area of inscribed triangle of 1/3 circle
     double area_upper_limit = pow(estimatedRadius, 2) * M_PI;  // the area of the circle
 
     if (std::max(bound.width, bound.height) < 2 * std::min(bound.width, bound.height) && /* dimension ratio */
-        CIRCLE_LEVEL_THRESHOLD <= circleLevel && area_lower_limit <= area && area <= area_upper_limit)
+        circle_level_th <= circleLevel && area_lower_limit <= area && area <= area_upper_limit)
     {
       // std::cerr << "circleLevel: " << circleLevel << std::endl;
       rangeColor = WHITE;
@@ -242,6 +248,9 @@ static cv::Mat signalDetect_inROI(const cv::Mat& roi, const cv::Mat& src_img, co
     if (contours_idx < 0)
       break;
   }
+  std_msgs::String circle_level_str;
+  circle_level_str.data = circle_level_ss.str();
+  circle_level_pub.publish(circle_level_str);
 
 #ifdef SHOW_DEBUG_INFO
   imshow("bright_mask", bright_mask);
@@ -327,6 +336,13 @@ static cv::Mat signalDetect_inROI(const cv::Mat& roi, const cv::Mat& src_img, co
     }
   }
 
+  //sai_add
+  if(publish_mask)
+  {
+    sensor_msgs::ImagePtr bright_mask_ptr = cv_bridge::CvImage(std_msgs::Header(), "mono8", bright_mask).toImageMsg();
+    bright_mask_pub.publish(bright_mask_ptr);
+  }
+
   return bright_mask;
 } /* static void signalDetect_inROI() */
 
@@ -335,7 +351,8 @@ TrafficLightDetector::TrafficLightDetector()
 {
 }
 
-void TrafficLightDetector::brightnessDetect(const cv::Mat& input, ros::Publisher green_pub, ros::Publisher yellow_pub, ros::Publisher red_pub, bool publish_mask)
+void TrafficLightDetector::brightnessDetect(const cv::Mat& input, ros::Publisher green_pub, ros::Publisher yellow_pub, ros::Publisher red_pub,
+                                            ros::Publisher bright_mask_pub, ros::Publisher circle_level_pub, bool publish_mask, float circle_level_th)
 {
   cv::Mat tmpImage;
   input.copyTo(tmpImage);
@@ -373,7 +390,8 @@ void TrafficLightDetector::brightnessDetect(const cv::Mat& input, ros::Publisher
 
     /* search the place where traffic signals seem to be */
     cv::Mat signalMask = signalDetect_inROI(roi_HSV, input.clone(), context.lampRadius, context.topLeft,
-                                            context.leftTurnSignal || context.rightTurnSignal, green_pub, yellow_pub, red_pub, publish_mask);
+                                            context.leftTurnSignal || context.rightTurnSignal, green_pub, yellow_pub, red_pub, bright_mask_pub,
+                                            circle_level_pub, publish_mask, circle_level_th);
 
     /* detect which color is dominant */
     cv::Mat extracted_HSV;

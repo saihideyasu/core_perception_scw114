@@ -24,6 +24,7 @@
 #include <vector>
 
 #include <ros/ros.h>
+#include <std_msgs/String.h>
 #include <autoware_msgs/Signals.h>
 #include <autoware_msgs/TrafficLight.h>
 #include <autoware_msgs/TrafficLightResult.h>
@@ -45,7 +46,7 @@ thresholdSet thSet;
 //config
 autoware_config_msgs::ConfigRegionTlr config;
 
-static ros::Publisher green_mono_pub, yellow_mono_pub, red_mono_pub;
+static ros::Publisher green_mono_pub, yellow_mono_pub, red_mono_pub, bright_mask_pub, circle_level_pub;
 static ros::Publisher signalState_pub;
 static ros::Publisher signalStateString_pub;
 static ros::Publisher marker_pub;
@@ -54,6 +55,7 @@ static ros::Publisher signal_state_array_publisher_;
 static constexpr int32_t ADVERTISE_QUEUE_SIZE = 10;
 static constexpr bool ADVERTISE_LATCH = true;
 static uint32_t shape = visualization_msgs::Marker::SPHERE;
+static float circle_level_th;
 
 // Variables
 static TrafficLightDetector detector;
@@ -213,7 +215,8 @@ static void extractedPos_cb(const autoware_msgs::Signals::ConstPtr& extractedPos
   /* Set subscribed signal position into detector */
   Context::SetContexts(&(detector.contexts), extractedPos, frame.rows, frame.cols);
 
-  detector.brightnessDetect(frame, green_mono_pub, yellow_mono_pub, red_mono_pub, config.publish_mask);
+  detector.brightnessDetect(frame, green_mono_pub, yellow_mono_pub, red_mono_pub, bright_mask_pub, circle_level_pub,
+                            config.publish_mask, circle_level_th);
 
   /* publish result */
   autoware_msgs::TrafficLight state_msg;
@@ -462,6 +465,8 @@ void config_cb(const autoware_config_msgs::ConfigRegionTlr& msg)
   thSet.Green.Hue.upper = static_cast<double>(msg.daytime_green_upper);
   thSet.Green.Hue.lower = static_cast<double>(msg.daytime_green_lower);
 
+  circle_level_th = msg.circle_level_threshold;
+
   show_superimpose_result = msg.display_superimpose;
 
   if (show_superimpose_result)
@@ -512,6 +517,8 @@ int main(int argc, char* argv[])
   thSet.Green.Val.upper = 1.0f;
   thSet.Green.Val.lower = DAYTIME_V_SIGNAL_THRESHOLD;
 
+  circle_level_th = CIRCLE_LEVEL_THRESHOLD;
+
   ros::init(argc, argv, "region_tlr");
 
   ros::NodeHandle n;
@@ -532,10 +539,11 @@ int main(int argc, char* argv[])
   signalStateString_pub = n.advertise<std_msgs::String>("/sound_player", ADVERTISE_QUEUE_SIZE);
   marker_pub = n.advertise<visualization_msgs::MarkerArray>("tlr_result", ADVERTISE_QUEUE_SIZE);
   superimpose_image_pub = n.advertise<sensor_msgs::Image>("tlr_superimpose_image", ADVERTISE_QUEUE_SIZE);
-  green_mono_pub = n.advertise<sensor_msgs::Image>("green_mono", ADVERTISE_QUEUE_SIZE);
-  yellow_mono_pub = n.advertise<sensor_msgs::Image>("yellow_mono", ADVERTISE_QUEUE_SIZE);
-  red_mono_pub = n.advertise<sensor_msgs::Image>("red_mono", ADVERTISE_QUEUE_SIZE);
-
+  green_mono_pub = n.advertise<sensor_msgs::Image>("/region_tlr/green_mono", ADVERTISE_QUEUE_SIZE);
+  yellow_mono_pub = n.advertise<sensor_msgs::Image>("/region_tlr/yellow_mono", ADVERTISE_QUEUE_SIZE);
+  red_mono_pub = n.advertise<sensor_msgs::Image>("/region_tlr/red_mono", ADVERTISE_QUEUE_SIZE);
+  bright_mask_pub = n.advertise<sensor_msgs::Image>("/region_tlr/bright_mask", ADVERTISE_QUEUE_SIZE);
+  circle_level_pub = n.advertise<std_msgs::String>("/region_tlr/circle_level", ADVERTISE_QUEUE_SIZE);
   signal_state_array_publisher_ =
       n.advertise<autoware_msgs::TrafficLightResultArray>("tlr_result_array", ADVERTISE_QUEUE_SIZE);
 
