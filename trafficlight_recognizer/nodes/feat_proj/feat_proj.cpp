@@ -64,7 +64,7 @@ static Eigen::Vector3f position;
 static Eigen::Quaternionf orientation;
 static float fx, fy, imageWidth, imageHeight, cx, cy;
 static tf::StampedTransform trf;
-
+static tf::Transform localizer_transform;
 static bool g_use_vector_map_server;  // Switch flag whether vecter-map-server function will be used
 static ros::ServiceClient g_ros_client;
 
@@ -110,6 +110,21 @@ public:
 };  // Class VectorMapClient
 }  // namespace
 static VectorMapClient g_vector_map_client;
+
+//geometry_msgs/Quaternionからroll,pitch,yawを取得
+void geometry_quat_to_rpy(double& roll, double& pitch, double& yaw, const geometry_msgs::Quaternion geometry_quat){
+	tf::Quaternion quat;
+	quaternionMsgToTF(geometry_quat, quat);
+	tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);  //rpy are Pass by Reference
+}
+
+void localizerTransformCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
+{
+  //localizer_transform = *msg;
+  tf::Transform localizer_transform;
+  localizer_transform.setOrigin(tf::Vector3(msg->pose.position.x, msg->pose.position.y, msg->pose.position.z));
+  localizer_transform.setRotation(tf::Quaternion(msg->pose.orientation.x, msg->pose.orientation.y, msg->pose.orientation.z, msg->pose.orientation.w));
+}
 
 /* Callback function to shift projection result */
 void adjust_xyCallback(const autoware_msgs::AdjustXY::ConstPtr& config_msg)
@@ -314,7 +329,17 @@ void echoSignals2(const ros::Publisher& pub, bool useOpenGLCoord = false)
     int pid = vmap.vectors[signal.vid].pid;
 
     Point3 signalcenter = vmap.getPoint(pid);
-    Point3 signalcenterx(signalcenter.x(), signalcenter.y(), signalcenter.z() + SignalLampRadius);
+
+    //2021_02_12 add 外部からの座標変換
+    tf::Pose cam_pose;
+    cam_pose.setOrigin(tf::Vector3(signalcenter.x(), signalcenter.y(), signalcenter.z()));
+    cam_pose.setRotation(tf::createQuaternionFromYaw(vmap.vectors[signal.vid].hang * M_PI / 180.0));
+    tf::Pose new_cam_pose = localizer_transform * cam_pose;
+    double new_roll, new_pitch, new_yaw;
+    tf::Matrix3x3(new_cam_pose.getRotation()).getRPY(new_roll, new_pitch, new_yaw);
+
+    //Point3 signalcenterx(signalcenter.x(), signalcenter.y(), signalcenter.z() + SignalLampRadius);
+    Point3 signalcenterx(new_cam_pose.getOrigin().x(), new_cam_pose.getOrigin().y(), new_cam_pose.getOrigin().z() + SignalLampRadius);
 
     int u, v;
     if (project2(signalcenter, &u, &v, useOpenGLCoord) == true)
@@ -334,7 +359,7 @@ void echoSignals2(const ros::Publisher& pub, bool useOpenGLCoord = false)
 
       sign.radius = radius;
       sign.x = signalcenter.x(), sign.y = signalcenter.y(), sign.z = signalcenter.z();
-      sign.hang = vmap.vectors[signal.vid].hang;  // hang is expressed in [0, 360] degree
+      sign.hang = new_yaw * 180.0 / M_PI;//vmap.vectors[signal.vid].hang;  // hang is expressed in [0, 360] degree
       sign.type = signal.type, sign.linkId = signal.linkid;
       sign.plId = signal.plid;
 
@@ -408,6 +433,7 @@ int main(int argc, char* argv[])
   vmap.loaded = true;
   ROS_INFO("Vector Map loaded.");
 
+  ros::Subscriber localizerTransformSub = rosnode.subscribe("localizer_transform", 1, localizerTransformCallback);
   ros::Subscriber cameraInfoSubscriber = rosnode.subscribe(cameraInfo_topic_name, 100, cameraInfoCallback);
   ros::Subscriber cameraImage = rosnode.subscribe(cameraInfo_topic_name, 100, cameraInfoCallback);
   ros::Subscriber adjust_xySubscriber = rosnode.subscribe("/config/adjust_xy", 100, adjust_xyCallback);
@@ -426,6 +452,9 @@ int main(int argc, char* argv[])
 
   ros::Publisher signalPublisher = rosnode.advertise<autoware_msgs::Signals>("roi_signal", 100);
   signal(SIGINT, interrupt);
+
+  localizer_transform.setOrigin(tf::Vector3(0,0,0));
+  localizer_transform.setRotation(tf::Quaternion(0,0,0,1));
 
   Rate loop(50);
   Eigen::Vector3f prev_position(0, 0, 0);
