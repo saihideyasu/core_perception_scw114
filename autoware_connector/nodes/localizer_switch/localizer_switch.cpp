@@ -17,7 +17,7 @@
 #include <message_filters/sync_policies/approximate_time.h>
 #include <autoware_config_msgs/ConfigLocalizerSwitch.h>
 
-const int max_localizer_count = 3;
+const int max_localizer_count = 2;
 const int SYNC_FRAMES = 10;
 
 typedef message_filters::sync_policies::ApproximateTime<geometry_msgs::PoseStamped, geometry_msgs::TwistStamped, geometry_msgs::PoseStamped, autoware_msgs::NDTStat>
